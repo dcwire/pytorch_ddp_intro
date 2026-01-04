@@ -1,9 +1,28 @@
 import torch
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, random_split, DistributedSampler
 from torchvision.datasets import MNIST
 import matplotlib.pyplot as plt
 from torchvision.transforms import transforms
 import torch.nn as nn
+
+# A pytorch wrapper of multiprocessing
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+import os
+
+def ddp_setup(rank, world_size):
+    """
+    Args:
+    - rank: unique identifier of each process
+    - world_size: total number of processes
+    """
+
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+
+    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    
 
 # Classic trainer
 class Trainer:
@@ -16,7 +35,8 @@ class Trainer:
         save_every: int
     ):
         self.gpu_id = gpu_id
-        self.model = model
+        # Assuming model is already on the GPU
+        self.model = DDP(model, device_ids=[gpu_id])
         self.train_data = train_data
         self.optimizer = optimizer
         self.save_every = save_every
@@ -55,7 +75,7 @@ class Trainer:
         
             
     def _save_checkpoint(self, epoch):
-        ckp = self.model.state_dict()
+        ckp = self.model.module.state_dict()
         torch.save(ckp, "checkpoint.pt")
         print(f"epoch: {epoch}, gpu_id: {self.gpu_id}, val_loss_acc: {self.validation_steps[-1]}")
     
@@ -94,10 +114,18 @@ class MnistModel(nn.Module):
 model = MnistModel(input_size, num_classes)
 model.to(device)
 
-train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 
-trainer = Trainer(model, train_loader, optimizer, device, 1)
+def main(rank: int, world_size: int, total_epochs: int, save_every: int):
+    ddp_setup(rank, world_size)
+    train_loader = DataLoader(train_data, batch_size=64, shuffle=False, sampler=DistributedSampler(train_data))
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    trainer = Trainer(model, train_loader, optimizer, rank, save_every)
+    trainer.train(max_epochs=total_epochs)
+    destroy_process_group()
 
-trainer.train(max_epochs=5)
+if __name__ == "__main__":
+    total_epochs = 5
+    save_every = 5
+    world_size = torch.cuda.device_count()
+    mp.spawn(main, args=(world_size, total_epochs, save_every), nprocs=world_size)
