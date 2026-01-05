@@ -111,14 +111,15 @@ class MnistModel(nn.Module):
         x = torch.flatten(x, start_dim=1)
         return self.linear(x)
         
-model = MnistModel(input_size, num_classes)
-model.to(device)
+
 
 
 
 def main(rank: int, world_size: int, total_epochs: int, save_every: int):
     ddp_setup(rank, world_size)
     train_loader = DataLoader(train_data, batch_size=64, shuffle=False, sampler=DistributedSampler(train_data))
+    model = MnistModel(input_size, num_classes)
+    model.to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     trainer = Trainer(model, train_loader, optimizer, rank, save_every)
     trainer.train(max_epochs=total_epochs)

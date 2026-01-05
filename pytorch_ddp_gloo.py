@@ -116,7 +116,7 @@ class MnistModel(nn.Module):
         x = torch.flatten(x, start_dim=1)
         return self.linear(x)
         
-model = MnistModel(input_size, num_classes)
+
 
 
 
@@ -127,7 +127,7 @@ def main(rank: int, world_size: int, total_epochs: int, save_every: int):
         gpu_id = 0
     else: 
         gpu_id = "cpu"
-
+    model = MnistModel(input_size, num_classes)
     train_loader = DataLoader(train_data, batch_size=512, shuffle=False, sampler=DistributedSampler(train_data))
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     trainer = Trainer(model, train_loader, optimizer, gpu_id, save_every, rank)
