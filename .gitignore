@@ -1,3 +1,6 @@
 data
 checkpoint.pt
 .venv
+log
+my_ddp_run.nsys-rep
+my_ddp_run.sqlite

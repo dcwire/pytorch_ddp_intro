@@ -52,13 +52,14 @@ class Trainer:
         loss.backward()
         self.optimizer.step()
 
-    def _run_epoch(self, epoch):
+    def _run_epoch(self, epoch, prof):
         # b_sz = len(next(iter(self.train_data)))
         for source, targets in self.train_data:
             source = source.to(self.gpu_id)
             targets = targets.to(self.gpu_id)
             
             self._run_batch(source, targets)
+            prof.step()
     
     def _accuracy(self, outputs, labels):
         outputs = outputs.to(self.gpu_id)
@@ -83,21 +84,23 @@ class Trainer:
     
     def train(self, max_epochs):
         self.model.train()
-        for i in range(max_epochs):
-            print(f"epoch: {i}, gpu_id: {self.gpu_id}, val_loss_acc: {self.validation_steps[-1]}, rank: {self.rank}")
-            self.train_data.sampler.set_epoch(i)
-            self._run_epoch(i)
-            self._validation_step()
-            if (i % self.save_every) == 0:
-                self._save_checkpoint(i)
-                
-
-if torch.cuda.is_available():
-    device = "cuda"
-else:
-    device = "cpu"
-
-torch.device(device)
+        # try:
+        with torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=1, warmup=5, active=3, repeat=2),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./log/rank_{self.rank}'),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True
+        ) as prof:
+            for i in range(max_epochs):
+                print(f"epoch: {i}, gpu_id: {self.gpu_id}, val_loss_acc: {self.validation_steps[-1]}, rank: {self.rank}")
+                self.train_data.sampler.set_epoch(i)
+                self._run_epoch(i, prof)
+                self._validation_step()
+                prof.step()
+                if (i % self.save_every) == 0:
+                    self._save_checkpoint(i)
+       
 
 mnist_dataset = MNIST(root="data/", train=True, download=True, transform=transforms.ToTensor())
 train_data, validation_data = random_split(mnist_dataset, [50000, 10000])
