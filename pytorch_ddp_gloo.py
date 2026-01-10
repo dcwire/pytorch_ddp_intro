@@ -87,7 +87,6 @@ class Trainer:
         # try:
         with torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=1, warmup=5, active=3, repeat=2),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./log/rank_{self.rank}'),
             record_shapes=True,
             profile_memory=True,
             with_stack=True
@@ -100,6 +99,7 @@ class Trainer:
                 prof.step()
                 if (i % self.save_every) == 0:
                     self._save_checkpoint(i)
+            prof.export_chrome_trace(f"./log/trace_rank_{self.rank}.json")
        
 
 mnist_dataset = MNIST(root="data/", train=True, download=True, transform=transforms.ToTensor())
